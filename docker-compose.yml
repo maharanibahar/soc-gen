@@ -1,0 +1,17 @@
+version: '3'
+services:
+  juiceshop:
+    image: bkimminich/juice-shop:v8.0.2
+    container_name: juiceshop
+    ports:
+      - 3001:3000
+  modsecurity:
+    image: owasp/modsecurity-crs:v3.1
+    container_name: modsecurity
+    ports:
+      - 3000:80
+    environment:
+    - PROXY=1
+    - UPSTREAM=192/168/178/42:3001
+    - PARANOIA=1
+  
