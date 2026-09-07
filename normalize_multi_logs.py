@@ -47,7 +47,7 @@ def to_utc(original_timestamp: str):
     
 
     # from @ style
-   if "@" in original_timestamp:
+    if "@" in original_timestamp:
         cleaned = original_timestamp.replace("@", "").replace("  ", " ").strip()
         for fmt in ("%b %d, %Y %H:%M:%S.%f", "%b %d, %Y %H:%M:%S"):
             try:
@@ -83,7 +83,7 @@ for csv_file in csv_files:
         
         # Wazuh File Integrity Monitoring (FIM) Log
         if "syscheck.path" in first_line or "rule.id" in first_line:
-            print("→ Detected Schema: Wazuh File Integrity Monitoring (FIM)")
+            print("→ Detected structure: Wazuh File Integrity Monitoring (FIM)")
             next(reader) 
             
             for row in reader:
@@ -99,9 +99,8 @@ for csv_file in csv_files:
  
                 output.append({
                     "timestamp": timestamp_utc,
-                    "source_log": "wazuh_fim",
+                    "source_type": "wazuh_fim",
                     "ip": None,  
-                    "signature": f"Wazuh_FIM_Rule_{rule_id} {event_action} on {file_path} ({rule_desc})",
                     "details": {
                         "agent_name": agent_name,
                         "file_path": file_path,
@@ -115,7 +114,7 @@ for csv_file in csv_files:
         #CYFIRMA Cyber Threat Intelligence (CTI) Log
        
         elif "User ID" in first_line or "Stealer Name" in first_line:
-            print("→ Detected Schema: CYFIRMA Cyber Threat Intelligence (CTI)")
+            print("→ Detected structure: CYFIRMA Cyber Threat Intelligence (CTI)")
             next(reader)
             
             for row in reader:
@@ -131,9 +130,8 @@ for csv_file in csv_files:
  
                 output.append({
                     "timestamp": timestamp_utc,
-                    "source_log": "cti_cyfirma",
+                    "source_type": "cti_cyfirma",
                     "ip": None,  
-                    "signature": f"CYFIRMA_CTI_ALERT Account {user_id} exfiltrated via {stealer_name} malware",
                     "details": {
                         "user_id": user_id,
                         "source_url": source_url,
@@ -148,7 +146,8 @@ for csv_file in csv_files:
 
         # Web server Logs
         else:
-            print("→ Detected Schema: Web Server Logs")
+            print("→ Detected structure: Web Server Logs")
+            next(reader)
             matched = 0
             failed = 0
             
@@ -159,37 +158,49 @@ for csv_file in csv_files:
 
                 match = regex.match(line)
 
-              if match:
+                if match:
                     data = match.groupdict()
- 
-                    timestamp_utc = to_utc(data["timestamp"])
-                    data["timestamp"] = timestamp_utc
- 
+                
+                    original_timestamp = data.pop("timestamp")
+                    timestamp_utc = to_utc(original_timestamp)
+                    data["timestamp_raw"] = original_timestamp
+
                     data["status"] = int(data["status"])
                     size_raw = data.pop("size")
                     data["response_size"] = None if size_raw == "-" else int(size_raw)
+
+                    ip = data.pop("ip")
  
                     output.append({
                         "timestamp": timestamp_utc,
-                        "source_log": "web_server",
-                        "ip": data["ip"],
-                        "signature": f"{data['method']} {data['path']} {data['protocol']} "
-                                     f"{data['status']} {data['response_size']}",
+                        "source_type": "web_server",
+                        "ip": ip,
                         "details": data
-                    })
+                       })
+                
                     matched += 1
                 else:
                     failed += 1
                     if failed <= 5:
                         print(f"failed normalize logs {i}: {line[:100]}")
- 
+
             print(f"Matched logs : {matched}")
             print(f"Failed logs  : {failed}")
 
 #sort all logs by timestamp
 output.sort(key=lambda x: x["timestamp"])
 
-output_file = OUTPUT_LOG / "normalized__multiple_logs.json"
+source_counts = {}
+for event in output:
+    src = event["source_type"]
+    source_counts[src] = source_counts.get(src, 0) + 1
+
+print("\n--- Summary ---")
+for src, count in sorted(source_counts.items(), key=lambda x: -x[1]):
+    print(f"{src:15s} : {count}")
+print(f"{'TOTAL':15s} : {len(output)}")
+
+output_file = OUTPUT_LOG / "normalized_multiple_logs.json"
 with open(output_file, "w", encoding="utf-8") as f:
     json.dump(output, f, ensure_ascii=False, indent=2)
 
