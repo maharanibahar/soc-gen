@@ -5,6 +5,14 @@ import glob
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from drain3 import TemplateMiner
+from drain3.template_miner_config import TemplateMinerConfig
+from drain3 import TemplateMiner
+from drain3.template_miner_config import TemplateMinerConfig
+
+
+config = TemplateMinerConfig()
+template_miner = TemplateMiner(config=config)
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_LOG = BASE_DIR / "output"
@@ -17,6 +25,7 @@ print(f"Reading : {csv_file}")
 total_lines = sum(1 for _ in open(csv_file))
 print(f"Total logs: {total_lines}")
 
+template_miner = TemplateMiner(config=config)
 
 normalize = re.compile(
     r'(?P<ip>[\d.]+)\s+'
@@ -45,6 +54,8 @@ with open(csv_file, newline="", encoding="utf-8") as f:
 
         if match:
             data = match.groupdict()
+            drain3_input = f"{data['method']} {data['path']} {data['protocol']} {data['status']} {data['size']}"
+            result = template_miner.add_log_message(drain3_input)
 
             original_timestamp = data["timestamp"]
             dt = datetime.strptime(original_timestamp, "%d/%b/%Y:%H:%M:%S %z")
@@ -55,6 +66,10 @@ with open(csv_file, newline="", encoding="utf-8") as f:
 
             data["status"] = int(data["status"])
             data["response_size"] = int(data.pop("size"))
+            
+            data["cluster_id"] = result["cluster_id"]
+
+           
             output.append(data)
             matched += 1
 
@@ -66,7 +81,7 @@ with open(csv_file, newline="", encoding="utf-8") as f:
 print(f"Matched logs : {matched}")
 print(f"Failed logs : {failed}")
 
-output_file = OUTPUT_LOG / "normalized_logs.json"
+output_file = OUTPUT_LOG / "normalized_logs_drain3.json"
 
 with open(output_file, "w", encoding="utf-8") as f:
     json.dump(output, f, ensure_ascii=False, indent=2)

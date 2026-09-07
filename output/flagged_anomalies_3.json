@@ -1,0 +1,150 @@
+[
+  {
+    "timestamp": "2026-05-05T05:26:51Z",
+    "source_type": "web",
+    "ip": "10.21.224.123",
+    "signature": "POST /whistleblowing/perl.WhistleBlowing HTTP/1.1 404 188",
+    "details": {
+      "ip": "10.21.224.123",
+      "ident": "-",
+      "user": "-",
+      "timestamp": "2026-05-05T05:26:51Z",
+      "method": "POST",
+      "path": "/whistleblowing/perl.WhistleBlowing",
+      "protocol": "HTTP/1.1",
+      "status": 404,
+      "referer": "-",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.86 Safari/537.36",
+      "forwarded_for": "168.144.97.238, 162.158.108.42",
+      "extra": "-",
+      "response_size": 188
+    },
+    "anomaly_reason": "Spatial Outlier (HDBSCAN Noise)"
+  },
+  {
+    "timestamp": "2026-05-05T19:18:00Z",
+    "source_type": "web",
+    "ip": "10.21.224.123",
+    "signature": "PUT /wp-content/plugins/w3-total-cache/pub/sns.php HTTP/1.1 404 125",
+    "details": {
+      "ip": "10.21.224.123",
+      "ident": "-",
+      "user": "-",
+      "timestamp": "2026-05-05T19:18:00Z",
+      "method": "PUT",
+      "path": "/wp-content/plugins/w3-total-cache/pub/sns.php",
+      "protocol": "HTTP/1.1",
+      "status": 404,
+      "referer": "-",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+      "forwarded_for": "157.85.96.175, 172.68.189.213",
+      "extra": "-",
+      "response_size": 125
+    },
+    "anomaly_reason": "Spatial Outlier (HDBSCAN Noise)"
+  },
+  {
+    "timestamp": "2026-05-06T01:17:53Z",
+    "source_type": "web",
+    "ip": "10.21.224.123",
+    "signature": "HEAD /https://stamar-ambon.bmkg.go.id/ HTTP/1.1 404 0",
+    "details": {
+      "ip": "10.21.224.123",
+      "ident": "-",
+      "user": "-",
+      "timestamp": "2026-05-06T01:17:53Z",
+      "method": "HEAD",
+      "path": "/https://stamar-ambon.bmkg.go.id/",
+      "protocol": "HTTP/1.1",
+      "status": 404,
+      "referer": "-",
+      "user_agent": "Test Certificate Info",
+      "forwarded_for": "2401:e320:f37:5410:9f3:dbae:d220:cabb, 172.71.214.251",
+      "extra": "-",
+      "response_size": 0
+    },
+    "anomaly_reason": "Spatial Outlier (HDBSCAN Noise)"
+  },
+  {
+    "timestamp": "2026-05-06T06:20:08Z",
+    "source_type": "web",
+    "ip": "10.21.224.123",
+    "signature": "HEAD /https://stamar-ambon.bmkg.go.id/ HTTP/1.1 404 0",
+    "details": {
+      "ip": "10.21.224.123",
+      "ident": "-",
+      "user": "-",
+      "timestamp": "2026-05-06T06:20:08Z",
+      "method": "HEAD",
+      "path": "/https://stamar-ambon.bmkg.go.id/",
+      "protocol": "HTTP/1.1",
+      "status": 404,
+      "referer": "-",
+      "user_agent": "Test Certificate Info",
+      "forwarded_for": "2001:448a:c0f0:180e:59cc:e8d4:fcb1:3214, 172.70.188.63",
+      "extra": "-",
+      "response_size": 0
+    },
+    "anomaly_reason": "Spatial Outlier (HDBSCAN Noise)"
+  },
+  {
+    "timestamp": "2026-05-06T10:39:37Z",
+    "source_type": "web",
+    "ip": "10.21.224.123",
+    "signature": "HEAD /https://stamar-ambon.bmkg.go.id/ HTTP/1.1 404 0",
+    "details": {
+      "ip": "10.21.224.123",
+      "ident": "-",
+      "user": "-",
+      "timestamp": "2026-05-06T10:39:37Z",
+      "method": "HEAD",
+      "path": "/https://stamar-ambon.bmkg.go.id/",
+      "protocol": "HTTP/1.1",
+      "status": 404,
+      "referer": "-",
+      "user_agent": "Test Certificate Info",
+      "forwarded_for": "216.243.112.218, 104.23.175.15",
+      "extra": "-",
+      "response_size": 0
+    },
+    "anomaly_reason": "Spatial Outlier (HDBSCAN Noise)"
+  },
+  {
+    "timestamp": "2026-05-08T16:32:20Z",
+    "source_type": "web",
+    "ip": "10.21.224.123",
+    "signature": "HEAD /https://stamar-ambon.bmkg.go.id/ HTTP/1.1 404 0",
+    "details": {
+      "ip": "10.21.224.123",
+      "ident": "-",
+      "user": "-",
+      "timestamp": "2026-05-08T16:32:20Z",
+      "method": "HEAD",
+      "path": "/https://stamar-ambon.bmkg.go.id/",
+      "protocol": "HTTP/1.1",
+      "status": 404,
+      "referer": "-",
+      "user_agent": "Test Certificate Info",
+      "forwarded_for": "2401:e320:f37:5410:ed88:8587:a83:c03e, 162.159.98.4",
+      "extra": "-",
+      "response_size": 0
+    },
+    "anomaly_reason": "Spatial Outlier (HDBSCAN Noise)"
+  },
+  {
+    "timestamp": "2026-07-11T20:53:11Z",
+    "source_type": "cti_cyfirma",
+    "ip": "0.0.0.0",
+    "signature": "CYFIRMA_CTI_ALERT Account Stasiun Geofisika Kelas III Saumlaki - Maluku Tenggara Barat exfiltrated via  malware",
+    "details": {
+      "user_id": "Stasiun Geofisika Kelas III Saumlaki - Maluku Tenggara Barat",
+      "source_url": "http://stamar-ambon.bmkg.go.id/ptsp/te-starter",
+      "breach_date": "2026-06-24",
+      "antivirus": "",
+      "stealer": "",
+      "stealer_name": "",
+      "stealer_path": ""
+    },
+    "anomaly_reason": "Spatial Outlier (HDBSCAN Noise)"
+  }
+]
