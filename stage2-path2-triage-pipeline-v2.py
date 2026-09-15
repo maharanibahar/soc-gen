@@ -1,7 +1,20 @@
 import json
+import hashlib
+import ipaddress
+import math
 import os
 import re
-from datetime import datetime
+import subprocess
+from functools import lru_cache
+from pathlib import Path
+from urllib.parse import parse_qsl, unquote, urlsplit
+
+
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_HTTP_RULES_PATH = BASE_DIR / "detection" / "http-signatures.json"
+DEFAULT_THREAT_INTEL_PATH = BASE_DIR / "detection" / "threat-intel.json"
+DEFAULT_TRUSTED_PROXIES_PATH = BASE_DIR / "detection" / "trusted-proxies.json"
+DEFAULT_CRS_REPLAY_DIR = BASE_DIR / "crs-replay"
 
 # Optional ML libraries with offline fallbacks for sandbox environment
 try:
@@ -29,26 +42,28 @@ except ImportError:
 # =====================================================================
 
 class LexicalFallbackEncoder:
-    """Simulates 384-d SBERT vector embeddings deterministically when offline."""
+    """Builds deterministic lexical vectors when SBERT is unavailable."""
     def encode(self, sentences, **kwargs):
-        import numpy as np
         embeddings = []
-        for s in sentences:
-            np.random.seed(abs(hash(s)) % (2**32))
-            vec = np.random.randn(384)
-            norm = np.linalg.norm(vec)
-            embeddings.append(vec / norm if norm > 0 else vec)
-        return np.array(embeddings)
+        for sentence in sentences:
+            vector = [0.0] * 256
+            tokens = re.findall(r"[a-z0-9_]+|[^\w\s]", sentence.casefold())
+            for token in tokens:
+                digest = hashlib.blake2s(token.encode("utf-8"), digest_size=4).digest()
+                bucket = int.from_bytes(digest, "big") % len(vector)
+                vector[bucket] += 1.0 if digest[0] & 1 else -1.0
+            norm = math.sqrt(sum(value * value for value in vector))
+            embeddings.append([value / norm for value in vector] if norm else vector)
+        return embeddings
 
 
 class LexicalFallbackClusterer:
-    """Simulates HDBSCAN density clustering when offline."""
+    """Groups nearly identical fallback vectors and marks the rest as outliers."""
     def fit_predict(self, embeddings):
-        import numpy as np
-        labels = np.full(len(embeddings), -1)  # Default to outliers
+        labels = [-1] * len(embeddings)
         for i in range(len(embeddings)):
             for j in range(i + 1, len(embeddings)):
-                sim = np.dot(embeddings[i], embeddings[j])
+                sim = sum(left * right for left, right in zip(embeddings[i], embeddings[j]))
                 if sim > 0.99:
                     labels[i] = 0
                     labels[j] = 0
@@ -136,7 +151,7 @@ def build_template_text(event):
         status = details.get("status", 200)
         return f"{method} {masked_path} {protocol} {status}"
         
-    elif source_type == "fim":
+    elif source_type in ("fim", "wazuh_fim"):
         rule_id = details.get("rule_id", 0)
         action = details.get("action", "MODIFY").upper()
         raw_file = details.get("file_path", "")
@@ -177,7 +192,7 @@ def build_semantic_text(event):
         
         return f"Web server recorded a {status_desc} {method} request to path {path} ({user_str}) {referer_str} returning status code {status_num}."
 
-    elif source_type == "fim":
+    elif source_type in ("fim", "wazuh_fim"):
         action = str(details.get("action", "modified")).lower()
         file_path = details.get("file_path", "unknown_path")
         agent = details.get("agent_name") or "host"
@@ -192,81 +207,270 @@ def build_semantic_text(event):
         return f"Generic security telemetry event recorded for source type {source_type}."
 
 
-# =====================================================================
-# FIX 2: PARALLEL DETERMINISTIC SIGNATURE & IOC INSPECTION ENGINE
-# =====================================================================
+@lru_cache(maxsize=None)
+def load_detection_data(path, expected_key):
+    path = Path(path)
+    try:
+        with path.open("r", encoding="utf-8") as source:
+            data = json.load(source)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Could not load detection data from {path}: {exc}") from exc
 
-def run_signature_inspection(event, cyfirma_iocs=None):
-    """
-    FIX 2: Parallel Signature / IOC Inspection Engine (Step 6).
-    Inspects raw telemetry in parallel with S-BERT/HDBSCAN using:
-    1. libinjection Lexical Parser (SQLi / XSS)
-    2. OWASP CRS Attack Pattern Ruleset (Path Traversal, RCE, Webshells)
-    3. CYFIRMA Feed Direct IOC Matching (File Hashes, C2 Domains, IP Feeds)
-    """
-    if cyfirma_iocs is None:
-        cyfirma_iocs = {
-            "users": {"admin", "root", "db_admin"},
-            "stealer_files": {"shell.php", "redline.exe", "setup.sh"},
-            "malicious_ips": {"172.19.0.12"},
-            "c2_urls": {"http://threat-intel"}
-        }
+    if not isinstance(data, dict) or expected_key not in data:
+        raise ValueError(f"Detection data {path} must contain '{expected_key}'.")
+    return data
 
-    source_type = event.get("source_type", "")
-    details = event.get("details", {})
-    raw_ip = event.get("ip") or details.get("srcip")
-    
-    sig_flags = {
-        "signature_libinjection": False,
-        "signature_owasp_crs": False,
-        "signature_cyfirma_ioc": False,
-        "signature_reasons": []
+
+def normalize_http_fields(event):
+    details = event.get("details") or {}
+    raw_target = str(details.get("path") or details.get("file_path") or "")
+    decoded_once = unquote(raw_target)
+    decoded_twice = unquote(decoded_once)
+    parsed = urlsplit(raw_target)
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+
+    return {
+        "raw_target": raw_target,
+        "decoded_target_once": decoded_once,
+        "decoded_target_twice": decoded_twice,
+        "route": unquote(parsed.path),
+        "query_keys": " ".join(key for key, _ in query_pairs),
+        "query_values": " ".join(value for _, value in query_pairs),
+        "user_agent": str(details.get("user_agent") or ""),
     }
 
-    # Extract strings for lexical scanning
-    target_path = details.get("path") or details.get("file_path") or ""
-    user_agent = details.get("user_agent") or ""
-    user_id = details.get("user_id") or details.get("user") or ""
-    scan_string = f"{target_path} {user_agent} {str(details)}".lower()
 
-    # 1. libinjection Lexical SQLi / XSS Parsing
-    sqli_patterns = [r"\bunion\b.*\bselect\b", r"\bor\b\s+1=1", r"/\*.*\*/", r";\s*drop\b", r"--\s*$", r"xp_cmdshell"]
-    xss_patterns = [r"<script\b", r"javascript:", r"onerror\s*=", r"onload\s*=", r"document\.cookie"]
-    
-    for pat in sqli_patterns + xss_patterns:
-        if re.search(pat, scan_string, re.IGNORECASE):
-            sig_flags["signature_libinjection"] = True
-            sig_flags["signature_reasons"].append("LIBINJECTION_SQLI_XSS_DETECTED")
+def load_trusted_networks(path):
+    data = load_detection_data(path, "networks")
+    networks = []
+    for value in data["networks"]:
+        try:
+            networks.append(ipaddress.ip_network(value))
+        except ValueError as exc:
+            raise ValueError(f"Invalid trusted proxy network '{value}' in {path}.") from exc
+    return networks, data.get("version", "unknown")
+
+
+def is_trusted_address(value, trusted_networks):
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return any(address in network for network in trusted_networks)
+
+
+def resolve_effective_client_ip(event, trusted_networks):
+    details = event.get("details") or {}
+    peer = str(event.get("ip") or details.get("srcip") or "").strip()
+    forwarded = [part.strip() for part in str(details.get("forwarded_for") or "").split(",") if part.strip()]
+
+    if not peer or not forwarded or not is_trusted_address(peer, trusted_networks):
+        return peer or None, "immediate_peer"
+
+    for candidate in reversed(forwarded):
+        if not is_trusted_address(candidate, trusted_networks):
+            return candidate, "trusted_forwarded_chain"
+    return forwarded[0], "trusted_forwarded_chain"
+
+
+def inspect_custom_http_rules(normalized_fields, rule_data):
+    metadata = rule_data["rule_set"]
+    hits = []
+
+    for rule in rule_data["rules"]:
+        try:
+            pattern = re.compile(rule["pattern"], re.IGNORECASE)
+        except (KeyError, re.error) as exc:
+            raise ValueError(f"Invalid HTTP rule {rule.get('id', '<missing id>')}: {exc}") from exc
+
+        for field in rule.get("fields", []):
+            value = normalized_fields.get(field, "")
+            match = pattern.search(value)
+            if not match:
+                continue
+            hits.append({
+                "rule_id": rule["id"],
+                "rule_name": rule["name"],
+                "rule_source": metadata["name"],
+                "rule_version": metadata["version"],
+                "category": rule["category"],
+                "severity": rule["severity"],
+                "confidence": rule["confidence"],
+                "matched_field": field,
+                "matched_value": match.group(0),
+            })
             break
+    return hits
 
-    # 2. OWASP CRS Rule Subset (Path Traversal, RCE, Webshell Execution)
-    owasp_patterns = [
-        (r"\.\./|\.\.\\", "OWASP_CRS_PATH_TRAVERSAL"),
-        (r"\b(eval|passthru|shell_exec|system|base64_decode)\s*\(", "OWASP_CRS_RCE_WEBSHELL"),
-        (r"/(cmd|bash|sh|powershell|certutil)\b", "OWASP_CRS_COMMAND_INJECTION"),
-        (r"\.(php|asp|aspx|jsp|cgi)\.", "OWASP_CRS_DOUBLE_EXTENSION_WEBSHELL")
-    ]
-    for pat, reason in owasp_patterns:
-        if re.search(pat, scan_string, re.IGNORECASE):
-            sig_flags["signature_owasp_crs"] = True
-            sig_flags["signature_reasons"].append(reason)
 
-    # 3. CYFIRMA Direct Threat Intelligence IOC Matching
-    if raw_ip and raw_ip in cyfirma_iocs["malicious_ips"]:
-        sig_flags["signature_cyfirma_ioc"] = True
-        sig_flags["signature_reasons"].append(f"CYFIRMA_MALICIOUS_IP ({raw_ip})")
+def values_from_event(event, normalized_fields):
+    details = event.get("details") or {}
+    source_url = str(details.get("source_url") or "")
+    source_domain = urlsplit(source_url).hostname or ""
+    return {
+        "ips": [str(event.get("effective_client_ip") or ""), str(event.get("ip") or "")],
+        "domains": [source_domain],
+        "urls": [source_url],
+        "file_names": [Path(str(details.get("file_path") or "")).name, normalized_fields["raw_target"]],
+        "file_hashes": [str(details.get(key) or "") for key in ("sha256", "sha1", "md5", "hash")],
+        "users": [str(details.get("user_id") or details.get("user") or "")],
+    }
 
-    if user_id and str(user_id).lower() in cyfirma_iocs["users"]:
-        if source_type == "cti_cyfirma":
-            sig_flags["signature_cyfirma_ioc"] = True
-            sig_flags["signature_reasons"].append(f"CYFIRMA_BREACHED_ACCOUNT ({user_id})")
 
-    for sfile in cyfirma_iocs["stealer_files"]:
-        if sfile in target_path.lower():
-            sig_flags["signature_cyfirma_ioc"] = True
-            sig_flags["signature_reasons"].append(f"CYFIRMA_MALICIOUS_FILE_MATCH ({sfile})")
+def inspect_threat_intel(event, normalized_fields, intel_data):
+    metadata = intel_data["feed"]
+    observed = values_from_event(event, normalized_fields)
+    hits = []
 
-    return sig_flags
+    for indicator_type, indicators in intel_data["indicators"].items():
+        candidates = [value.casefold() for value in observed.get(indicator_type, []) if value]
+        for indicator in indicators:
+            value = str(indicator["value"])
+            expected = value.casefold()
+            matched = any(
+                expected in candidate if indicator_type == "file_names" else expected == candidate
+                for candidate in candidates
+            )
+            if matched:
+                hits.append({
+                    "rule_id": indicator.get("id", f"IOC-{indicator_type}-{value}"),
+                    "rule_name": f"Threat intelligence {indicator_type} match",
+                    "rule_source": metadata["name"],
+                    "rule_version": metadata["version"],
+                    "category": "threat_intelligence",
+                    "severity": indicator.get("severity", "high"),
+                    "confidence": indicator.get("confidence", 1.0),
+                    "matched_field": indicator_type,
+                    "matched_value": value,
+                })
+    return hits
+
+
+def inspect_upstream_crs(event):
+    details = event.get("details") or {}
+    rule_ids = []
+    for key in ("owasp_crs_rule_ids", "modsecurity_rule_ids", "crs_rule_ids"):
+        value = details.get(key)
+        if isinstance(value, list):
+            rule_ids.extend(value)
+        elif value:
+            rule_ids.extend(part.strip() for part in str(value).split(",") if part.strip())
+
+    return [{
+        "rule_id": str(rule_id),
+        "rule_name": "Upstream OWASP CRS match",
+        "rule_source": "owasp-crs-upstream",
+        "rule_version": str(details.get("owasp_crs_version") or "unknown"),
+        "category": "upstream_waf",
+        "severity": "high",
+        "confidence": 1.0,
+        "matched_field": "details.crs_rule_ids",
+        "matched_value": str(rule_id),
+    } for rule_id in rule_ids]
+
+
+def inspect_offline_crs(event):
+    replay = event.get("crs_replay") or {}
+    hits = []
+    for rule in replay.get("matched_rules", []):
+        if not rule.get("is_attack"):
+            continue
+        matched_variables = rule.get("matched_variables") or []
+        first_match = matched_variables[0] if matched_variables else {}
+        variable = first_match.get("variable", "unknown")
+        key = first_match.get("key")
+        hits.append({
+            "rule_id": str(rule["id"]),
+            "rule_name": rule.get("message") or "Offline OWASP CRS match",
+            "rule_source": "owasp-crs-offline-coraza",
+            "rule_version": replay.get("crs_version", "unknown"),
+            "engine": replay.get("engine", "coraza"),
+            "engine_version": replay.get("engine_version", "unknown"),
+            "category": next(
+                (tag for tag in rule.get("tags", []) if tag.startswith("attack-")),
+                "owasp_crs",
+            ),
+            "severity": rule.get("severity", "unknown"),
+            "confidence": 1.0,
+            "matched_field": f"{variable}:{key}" if key else variable,
+            "matched_value": first_match.get("value", ""),
+            "coverage": replay.get("coverage", {}),
+        })
+    return hits
+
+
+def run_offline_crs_replay(events, command=None, replay_dir=DEFAULT_CRS_REPLAY_DIR):
+    if not events:
+        return []
+    if command is None:
+        command = ["mise", "exec", "--", "go", "run", "."]
+
+    payload = "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n"
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=replay_dir,
+            input=payload,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"Could not start offline CRS replay: {exc}") from exc
+
+    if completed.returncode != 0:
+        error = completed.stderr.strip() or "unknown runner error"
+        raise RuntimeError(f"Offline CRS replay failed: {error}")
+
+    results = []
+    for line_number, line in enumerate(completed.stdout.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            result = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Offline CRS replay returned invalid JSON on line {line_number}.") from exc
+        results.append(result)
+
+    if len(results) != len(events):
+        raise RuntimeError(
+            f"Offline CRS replay returned {len(results)} results for {len(events)} events."
+        )
+    return results
+
+
+def run_signature_inspection(
+    event,
+    http_rules_path=DEFAULT_HTTP_RULES_PATH,
+    threat_intel_path=DEFAULT_THREAT_INTEL_PATH,
+    trusted_proxies_path=DEFAULT_TRUSTED_PROXIES_PATH,
+):
+    rule_data = load_detection_data(http_rules_path, "rules")
+    intel_data = load_detection_data(threat_intel_path, "indicators")
+    trusted_networks, trusted_proxy_version = load_trusted_networks(trusted_proxies_path)
+    normalized_fields = normalize_http_fields(event)
+    effective_client_ip, client_ip_source = resolve_effective_client_ip(event, trusted_networks)
+
+    event["effective_client_ip"] = effective_client_ip
+    normalized_fields["effective_client_ip"] = effective_client_ip
+    custom_hits = inspect_custom_http_rules(normalized_fields, rule_data)
+    threat_intel_hits = inspect_threat_intel(event, normalized_fields, intel_data)
+    offline_crs_hits = inspect_offline_crs(event)
+    upstream_crs_hits = inspect_upstream_crs(event)
+    detection_hits = custom_hits + threat_intel_hits + offline_crs_hits + upstream_crs_hits
+
+    return {
+        "signature_custom_http": bool(custom_hits),
+        "signature_threat_intel": bool(threat_intel_hits),
+        "signature_offline_owasp_crs": bool(offline_crs_hits),
+        "signature_upstream_owasp_crs": bool(upstream_crs_hits),
+        "signature_reasons": [hit["rule_id"] for hit in detection_hits],
+        "detection_hits": detection_hits,
+        "http_normalization": normalized_fields,
+        "effective_client_ip": effective_client_ip,
+        "client_ip_source": client_ip_source,
+        "trusted_proxy_config_version": trusted_proxy_version,
+    }
 
 
 # =====================================================================
@@ -274,9 +478,14 @@ def run_signature_inspection(event, cyfirma_iocs=None):
 # =====================================================================
 
 def run_path2_triage_pipeline(
-    input_path="output/normalized_logs.json",
+    input_path="output/normalized_multiple_logs.json",
     all_output_path="output/engineered_logs_all.json",
     candidate_output_path="output/path2_candidate_logs.json",
+    http_rules_path=DEFAULT_HTTP_RULES_PATH,
+    threat_intel_path=DEFAULT_THREAT_INTEL_PATH,
+    trusted_proxies_path=DEFAULT_TRUSTED_PROXIES_PATH,
+    crs_replay_command=None,
+    crs_replay_dir=DEFAULT_CRS_REPLAY_DIR,
     rare_template_threshold=3,
     min_cluster_size=5,
     min_samples=2
@@ -289,23 +498,25 @@ def run_path2_triage_pipeline(
 
     # Load normalized logs
     if not os.path.exists(input_path):
-        print(f"[!] Input file {input_path} not found. Creating synthetic test batch...")
-        mock_logs = [
-            {"timestamp": "2026-05-09T13:16:20Z", "source_type": "web_server", "ip": "172.19.0.12", "details": {"method": "GET", "path": "/index.php", "status": 200, "user": "-", "referer": "http://google.com"}},
-            {"timestamp": "2026-05-09T13:16:21Z", "source_type": "web_server", "ip": "172.19.0.12", "details": {"method": "GET", "path": "/index.php", "status": 200, "user": "-", "referer": "http://google.com"}},
-            {"timestamp": "2026-05-09T13:16:22Z", "source_type": "web_server", "ip": "172.19.0.12", "details": {"method": "POST", "path": "/wp-content/shell.php", "status": 200, "user": "-", "referer": "-"}},
-            {"timestamp": "2026-05-09T13:16:24Z", "source_type": "fim", "ip": None, "details": {"file_path": "/var/www/html/wp-content/shell.php", "action": "CREATE", "rule_id": 550, "agent_name": "web-server-prod"}},
-            {"timestamp": "2026-05-09T13:16:25Z", "source_type": "web_server", "ip": "172.19.0.12", "details": {"method": "GET", "path": "/wp-content/shell.php?id=102' UNION SELECT 1,2,3--", "status": 200, "user": "admin", "referer": "-"}},
-            {"timestamp": "2026-05-09T13:16:28Z", "source_type": "cti_cyfirma", "ip": None, "details": {"user_id": "admin", "stealer_name": "RedLine", "source_url": "http://threat-intel"}},
-            {"timestamp": "2026-05-09T13:17:10Z", "source_type": "web_server", "ip": "192.168.1.100", "details": {"method": "GET", "path": "/about.html", "status": 200, "user": "-", "referer": "http://bing.com"}},
-            {"timestamp": "2026-05-09T13:17:11Z", "source_type": "web_server", "ip": "192.168.1.100", "details": {"method": "GET", "path": "/about.html", "status": 200, "user": "-", "referer": "http://bing.com"}}
-        ]
-        with open(input_path, "w", encoding="utf-8") as f:
-            json.dump(mock_logs, f, indent=2)
+        raise FileNotFoundError(f"Input file {input_path} not found.")
 
     with open(input_path, "r", encoding="utf-8") as f:
         logs = json.load(f)
     print(f"[+] Step 0: Ingested {len(logs)} raw normalized event cards.")
+
+    print("[*] Replaying normalized HTTP events through Coraza and OWASP CRS...")
+    crs_events = [
+        event for event in logs
+        if event.get("source_type") in ("web", "web_server")
+    ]
+    crs_results = run_offline_crs_replay(
+        crs_events,
+        command=crs_replay_command,
+        replay_dir=crs_replay_dir,
+    )
+    for event, result in zip(crs_events, crs_results):
+        event["crs_replay"] = result
+    print(f"[+] Offline CRS replay complete for {len(crs_results)} HTTP events.")
 
     # -----------------------------------------------------------------
     # STEP 1 & 2: PARTITIONED DRAIN3 MINING WITH LEAF-MASKED PATHS
@@ -319,12 +530,14 @@ def run_path2_triage_pipeline(
         miners = {
             "web_server": TemplateMiner(config=drain_config),
             "fim": TemplateMiner(config=drain_config),
+            "wazuh_fim": TemplateMiner(config=drain_config),
             "cti_cyfirma": TemplateMiner(config=drain_config)
         }
     else:
         miners = {
             "web_server": LexicalFallbackDrain(),
             "fim": LexicalFallbackDrain(),
+            "wazuh_fim": LexicalFallbackDrain(),
             "cti_cyfirma": LexicalFallbackDrain()
         }
 
@@ -362,14 +575,15 @@ def run_path2_triage_pipeline(
     # -----------------------------------------------------------------
     # STEP 4: SHARED SBERT EMBEDDING
     # -----------------------------------------------------------------
-    print("[*] Step 4: Embedding semantic_text into shared 384-d vector space via SBERT...")
+    print("[*] Step 4: Embedding semantic_text with SBERT or the lexical fallback...")
     if HAS_SBERT:
         encoder = SentenceTransformer("all-MiniLM-L6-v2")
         embeddings = encoder.encode(semantic_sentences, show_progress_bar=False, convert_to_numpy=True)
     else:
         encoder = LexicalFallbackEncoder()
         embeddings = encoder.encode(semantic_sentences)
-    print(f"[+] Step 4 Complete: Embeddings generated shape = {embeddings.shape}.")
+    embedding_width = len(embeddings[0]) if len(embeddings) else 0
+    print(f"[+] Step 4 Complete: Embeddings generated shape = ({len(embeddings)}, {embedding_width}).")
 
     # -----------------------------------------------------------------
     # STEP 5 & 6: HDBSCAN CLUSTERING & PARALLEL SIGNATURE ENGINE
@@ -383,12 +597,16 @@ def run_path2_triage_pipeline(
         cluster_labels = clusterer.fit_predict(embeddings)
 
     for i, event in enumerate(logs):
-        event["embedding"] = embeddings[i].tolist()
+        event["embedding"] = embeddings[i].tolist() if hasattr(embeddings[i], "tolist") else embeddings[i]
         event["cluster_label"] = int(cluster_labels[i])
         event["is_outlier"] = bool(cluster_labels[i] == -1)
         
-        # FIX 2: Run parallel signature & CYFIRMA IOC inspection
-        sig_results = run_signature_inspection(event)
+        sig_results = run_signature_inspection(
+            event,
+            http_rules_path=http_rules_path,
+            threat_intel_path=threat_intel_path,
+            trusted_proxies_path=trusted_proxies_path,
+        )
         event.update(sig_results)
 
     print("[+] Step 5 & 6 Complete: HDBSCAN outliers & Signature/IOC flags assigned.")
@@ -403,21 +621,24 @@ def run_path2_triage_pipeline(
         is_hdbscan_outlier = event["is_outlier"]
         is_rare_template = event["template_cluster_size"] <= rare_template_threshold
         is_sig_hit = (
-            event["signature_libinjection"] or 
-            event["signature_owasp_crs"] or 
-            event["signature_cyfirma_ioc"]
+            event["signature_custom_http"]
+            or event["signature_threat_intel"]
+            or event["signature_offline_owasp_crs"]
+            or event["signature_upstream_owasp_crs"]
         )
 
         event["anomaly_hdbscan_outlier"] = is_hdbscan_outlier
         event["anomaly_rare_drain3_template"] = is_rare_template
         
         tags = []
-        if event["signature_libinjection"]:
-            tags.append("SIG_LIBINJECTION")
-        if event["signature_owasp_crs"]:
-            tags.append("SIG_OWASP_CRS")
-        if event["signature_cyfirma_ioc"]:
-            tags.append("SIG_CYFIRMA_IOC")
+        if event["signature_custom_http"]:
+            tags.append("SIG_CUSTOM_HTTP")
+        if event["signature_threat_intel"]:
+            tags.append("SIG_THREAT_INTEL")
+        if event["signature_offline_owasp_crs"]:
+            tags.append("SIG_OFFLINE_OWASP_CRS")
+        if event["signature_upstream_owasp_crs"]:
+            tags.append("SIG_UPSTREAM_OWASP_CRS")
         if is_hdbscan_outlier:
             tags.append("ANOMALY_HDBSCAN")
         if is_rare_template:

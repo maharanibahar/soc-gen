@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "rule_set": {
+    "name": "soc-gen-custom-http-rules",
+    "version": "1.0.0"
+  },
+  "rules": [
+    {
+      "id": "HTTP-PATH-001",
+      "name": "Path traversal sequence",
+      "category": "path_traversal",
+      "severity": "high",
+      "confidence": 0.95,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice", "query_values"],
+      "pattern": "\\.\\.(?:/|\\\\)|%2e%2e(?:%2f|%5c|/|\\\\)"
+    },
+    {
+      "id": "HTTP-ENCODING-001",
+      "name": "Encoded path delimiter",
+      "category": "encoding_evasion",
+      "severity": "medium",
+      "confidence": 0.65,
+      "fields": ["raw_target"],
+      "pattern": "%(?:2e|2f|5c)"
+    },
+    {
+      "id": "HTTP-SQLI-001",
+      "name": "UNION SELECT sequence",
+      "category": "sql_injection",
+      "severity": "critical",
+      "confidence": 0.98,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice", "query_values"],
+      "pattern": "\\bunion\\b.{0,120}\\bselect\\b"
+    },
+    {
+      "id": "HTTP-SQLI-002",
+      "name": "SQL comment terminator",
+      "category": "sql_injection",
+      "severity": "high",
+      "confidence": 0.8,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice", "query_values"],
+      "pattern": "--(?:\\s|%20|\\+)+(?:-|$)"
+    },
+    {
+      "id": "HTTP-SQLI-003",
+      "name": "Boolean SQL injection expression",
+      "category": "sql_injection",
+      "severity": "high",
+      "confidence": 0.9,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice", "query_values"],
+      "pattern": "\\b(?:or|and)\\b\\s+['\\\"]?\\d+['\\\"]?\\s*=\\s*['\\\"]?\\d+"
+    },
+    {
+      "id": "HTTP-XSS-001",
+      "name": "Executable browser script",
+      "category": "cross_site_scripting",
+      "severity": "high",
+      "confidence": 0.9,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice", "query_values"],
+      "pattern": "<script\\b|javascript:|on(?:error|load)\\s*="
+    },
+    {
+      "id": "HTTP-RCE-001",
+      "name": "Command execution function",
+      "category": "command_execution",
+      "severity": "critical",
+      "confidence": 0.9,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice", "query_values"],
+      "pattern": "\\b(?:eval|passthru|shell_exec|system|base64_decode)\\s*\\("
+    },
+    {
+      "id": "HTTP-WEBSHELL-001",
+      "name": "Double-extension executable web file",
+      "category": "webshell",
+      "severity": "high",
+      "confidence": 0.85,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice"],
+      "pattern": "\\.(?:php|asp|aspx|jsp|cgi)\\."
+    },
+    {
+      "id": "HTTP-WORDPRESS-001",
+      "name": "Sensitive WordPress database target",
+      "category": "sensitive_target",
+      "severity": "medium",
+      "confidence": 0.75,
+      "fields": ["raw_target", "decoded_target_once", "decoded_target_twice", "query_values"],
+      "pattern": "\\b(?:wp_users|wp_options|wp-config(?:\\.php)?|db-table)\\b"
+    }
+  ]
+}
