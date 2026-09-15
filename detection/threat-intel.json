@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "feed": {
+    "name": "local-threat-intel-snapshot",
+    "version": "empty-2026-09-15",
+    "retrieved_at": null
+  },
+  "indicators": {
+    "ips": [],
+    "domains": [],
+    "urls": [],
+    "file_names": [],
+    "file_hashes": [],
+    "users": []
+  }
+}

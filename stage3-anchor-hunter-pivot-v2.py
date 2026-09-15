@@ -60,7 +60,12 @@ def extract_multi_axis_anchors(seed_logs, max_path_frequency=5):
 
         # 3. File / Endpoint Paths (Only low-frequency or signature-flagged!)
         cluster_size = log.get("template_cluster_size", 1)
-        has_signature = any(log.get(k) for k in ["sig_libinjection", "sig_owasp_crs", "sig_cyfirma_ioc"])
+        has_signature = any(log.get(k) for k in [
+            "signature_custom_http",
+            "signature_threat_intel",
+            "signature_offline_owasp_crs",
+            "signature_upstream_owasp_crs",
+        ])
         for path_key in ["path", "file_path", "stealer_path", "url"]:
             p = clean_anchor_val(details.get(path_key))
             if p:
@@ -86,7 +91,7 @@ def log_matches_multi_axis_anchors(log, anchors, time_window_minutes=30):
     CRITICAL FIX: STRICT TIME-WINDOW BOUNDING ENFORCED ACROSS ALL AXES!
     """
     log_ts = parse_iso_ts(log.get("timestamp"))
-    
+
     # 1. STRICT TIME-WINDOW CHECK (Applies to ALL axes)
     if log_ts and anchors["timestamps"]:
         min_ts = min(anchors["timestamps"]) - timedelta(minutes=time_window_minutes)
