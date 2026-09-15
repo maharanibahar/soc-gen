@@ -403,7 +403,7 @@ def run_offline_crs_replay(events, command=None, replay_dir=DEFAULT_CRS_REPLAY_D
     if not events:
         return []
     if command is None:
-        command = ["mise", "exec", "--", "go", "run", "."]
+        command = ["go", "run", "."]
 
     payload = "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n"
     try:

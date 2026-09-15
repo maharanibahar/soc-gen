@@ -25,7 +25,7 @@ Run its tests with:
 
 ```sh
 cd crs-replay
-mise exec -- go test ./...
+go test ./...
 ```
 
 ## Upstream OWASP CRS results

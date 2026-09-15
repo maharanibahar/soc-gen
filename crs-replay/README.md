@@ -6,7 +6,7 @@ The command reads one JSON object per line from standard input and writes one re
 
 ```sh
 printf '%s\n' '{"event_id":"EV-1","ip":"192.0.2.10","method":"GET","path":"/?file=../../../etc/passwd","protocol":"HTTP/1.1"}' \
-  | mise exec -- go run ./crs-replay
+  | go run ./crs-replay
 ```
 
 Each result includes:
@@ -27,5 +27,5 @@ The project uses the Go version managed by `mise`:
 
 ```sh
 cd crs-replay
-mise exec -- go test ./...
+go test ./...
 ```
