@@ -14,18 +14,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import uuid
 from dotenv import load_dotenv
 import subprocess
+import logging
+log = logging.getLogger(__name__)
 
-
-
-
-BASE_DIR = Path(__file__).resolve().parent
-
-import json
-import os
-from pathlib import Path
-
-from dotenv import load_dotenv
-from openai import OpenAI
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / "api_key.env")
@@ -120,7 +111,7 @@ def call_llm(system, user):
     return result.stdout.strip()
 
 
-def main():
+def run():
     context = json.loads(CONTEXT.read_text(encoding="utf-8"))
     user_prompt = build_user_prompt(context)
     report = call_llm(SYSTEM, user_prompt)
@@ -137,7 +128,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    run()
+
 
 # def load_jsonl(path):
 #     rows = []

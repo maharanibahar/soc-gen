@@ -1,9 +1,9 @@
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from collections import Counter
 from helpers import load_jsonl, write_jsonl, parse_ts, real_client, path_prefix
-
+import logging
+log = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 NORMALIZED = BASE_DIR/"data"/"output"/"normalized_events.jsonl"
@@ -14,9 +14,8 @@ TEMPORAL_WINDOW_HOURS = 48
 LEVEL_THRESHOLD = 7
 
 
-
 def build_seed_profile(seed_events):
-    actors, rules, groups, urls, times = set(), set(), set(), set(), []
+    actors, rules, urls, times = set(), set(), set(), []
     for ev in seed_events:
         e = ev["entities"]
 
@@ -27,13 +26,13 @@ def build_seed_profile(seed_events):
         si = ev["security_interpretation"]
         if si.get("rule_id"):
             rules.add(si["rule_id"])
-        groups.update(si.get("groups") or [])
+        
         if e.get("url"):
             urls.add(e["url"])
         t = parse_ts(ev["timestamp"])
         if t:
             times.append(t)
-    return {"actors": actors, "rules": rules, "groups": groups, "urls": urls, "times": times}
+    return {"actors": actors, "rules": rules, "urls": urls, "times": times}
 
 
 def in_scope(ev,scope):
@@ -46,7 +45,6 @@ def in_scope(ev,scope):
 
 def same_seed_event(ev, scope):
     return ev["event_id"] in scope.get("seed_events", [])
-
 
 def same_actor(ev, profile):
     return real_client(ev) in profile["actors"]
@@ -101,7 +99,7 @@ def retrieve(events, scope):
     return kept
 
 
-def main():
+def run():
     scope = json.loads(SCOPE_FILE.read_text(encoding="utf-8"))
     events = load_jsonl(NORMALIZED)
 
@@ -110,11 +108,12 @@ def main():
 
     total = len(events)
     kept = len(candidates)
-    print(f"Iput events : {total}")
-    print(f"Cndidates   : {kept}")
-    print(f"Reduction   : {kept / total:.1%}")
-    print("by decoder   :", Counter(c["source"].get("decoder") for c in candidates).most_common(10))
-    print("seed inside  :", all(any(c["event_id"] == s for c in candidates) for s in scope["seed_events"]))
+    log.info(f"Input events : {total}")
+    log.info(f"Candidates   : {kept}")
+    log.info(f"Reduction   : {kept / total:.1%}")
+    log.info("by decoder: %s", Counter(c["source"].get("decoder") for c in candidates).most_common(10))
+    log.info("seed inside: %s", all(any(c["event_id"] == s for c in candidates) for s in scope["seed_events"]))
+
 
 if __name__ == "__main__":
     logging.basicConfig(

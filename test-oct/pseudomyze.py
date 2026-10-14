@@ -1,6 +1,8 @@
 import json
 import re
 from pathlib import Path
+import logging
+log = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 CTX = BASE_DIR / "data" / "output" / "incident_context.json"
@@ -82,7 +84,7 @@ def verify(pseudo_text):
     return leftovers
 
 
-def main():
+def run():
     context = json.loads(CTX.read_text(encoding="utf-8"))
     text = json.dumps(context, ensure_ascii=False, indent=2)
 
@@ -93,18 +95,22 @@ def main():
     MAP_FILE.write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
     MAP_FILE.chmod(0o600)
 
-    print(f"replaced {len(mapping)} identifiers")
+    logging.info(f"replaced {len(mapping)} identifiers")
     leftovers = verify(pseudo)
     if leftovers:
-        print("!! WARNING - identifier-looking text still present:")
+        logging.warning("!! WARNING - identifier-looking text still present:")
         for kind, hits in leftovers:
-            print(f"   {kind}: {hits}")
-        print("   -> add a pattern or harvest rule before sending.")
+            logging.warning(f"   {kind}: {hits}")
+        logging.info("   -> add a pattern or harvest rule before sending.")
     else:
-        print("OK: no identifier-looking text remains")
-    print("send to API :", PSEUDO)
-    print("keep secret :", MAP_FILE)
+        logging.info("OK: no identifier-looking text remains")
+    logging.info("send to API : %s", PSEUDO)
+    logging.info("keep secret : %s", MAP_FILE)
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    run()

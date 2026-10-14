@@ -27,13 +27,12 @@ STAGES = [
     ("de-map report", demap_report.run),
 ]
 
-
-def main():
-    for name, run in STAGES:
+def run():
+    for name, stages in STAGES:
         print(f"\n{'=' * 60}\n▶ {name}\n{'=' * 60}")
         start = time.time()
         try:
-            run()
+            stages()
         except Exception:
             print(f"✖ stage failed: {name}")
             traceback.print_exc()
@@ -42,4 +41,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    run()

@@ -1,6 +1,6 @@
 import re
 import json
-from helpers import  parse_ts, to_utc, write_jsonl, 
+from helpers import  parse_ts, to_utc, write_jsonl
 from collections import Counter
 from pathlib import Path
 import logging

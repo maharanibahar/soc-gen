@@ -1,36 +1,17 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from collections import defaultdict, Counter
+from helpers import load_jsonl, parse_ts, real_client
+import logging
+log = logging.getLogger(__name__)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 CANDIDATES = BASE_DIR / "data" / "output" / "candidate_events.jsonl"
-RELATIONSHIPS = BASE_DIR / "data" / "output" / "event_relationships.json"
+CORRELATIONS = BASE_DIR / "data" / "output" / "correlated_events.json"
 INCIDENT = BASE_DIR / "data" / "output" / "incident.json"
 
 SCOPE_FILE = BASE_DIR / "data" /"input" / "incident_scope.json"
-
-
-def load_jsonl(path):
-    rows = []
-    with Path(path).open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
-def parse_ts(ts):
-    if not ts:
-        return None
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-
-
-def real_client(ev):
-    fwd = ev["entities"].get("http_forwarded_for") or []
-    return fwd[0] if fwd else ev["entities"].get("source_ip")
 
 
 def summarize(ev):
@@ -106,55 +87,27 @@ def extract_observed(events):
             observed.append({
                 "statement": f"web attack request returned HTTP 200: {ev['entities'].get('url')}",
                 "event_id": ev["event_id"],
+                "kind": "attack_success",
             })
         elif dec.startswith("syscheck") and ev["entities"].get("file"):
             observed.append({
                 "statement": f"file system change: {ev['entities']['file']} ({si.get('rule_description')})",
                 "event_id": ev["event_id"],
+                "kind": "file_change",
             })
     return observed
 
-
 def extract_inferred(events, relationships):
-    # heuristic: one target touched by >1 distinct actor -> possible shared campaign
-    target_actors = defaultdict(set)
-    for ev in events:
-        actor = real_client(ev)
-        target = ev["entities"].get("file") or ev["entities"].get("url")
-        if actor and target:
-            target_actors[target].add(actor)
+    return []
 
-    inferred = []
-    for target, actors in target_actors.items():
-        if len(actors) > 1:
-            inferred.append({
-                "statement": f"multiple actors touched the same target: {target}",
-                "actors": sorted(actors),
-                "note": "linkage inferred, not directly observed",
-            })
-    return inferred
-
-
-def extract_unknown_and_missing(events):
-    # these are curated per case; seed with sensible gaps for this incident
-    unknown = [
-        "whether commands were executed through the dropped shells",
-        "whether data was exfiltrated",
-        "whether the server was fully compromised",
-    ]
-    missing = [
-        "process execution telemetry (e.g. Sysmon/auditd) after shell drop",
-        "outbound network connections following the shell",
-        "web server logs beyond the ingested window",
-    ]
-    return unknown, missing
-
+def extract_unknown_and_missing(scope):
+    return scope.get("unknown", []), scope.get("missing_evidence", [])
 
 def build_incident(scope, events, relationships):
     timeline = build_timeline(events)
     observed = extract_observed(events)
     inferred = extract_inferred(events, relationships)
-    unknown, missing = extract_unknown_and_missing(events)
+    unknown, missing = extract_unknown_and_missing(scope)
 
     return {
         "incident_id": scope["incident_id"],
@@ -169,31 +122,34 @@ def build_incident(scope, events, relationships):
         "unknown": unknown,
         "missing_evidence": missing,
         "impact": {
-            "observed_file_changes": len([o for o in observed if "file system" in o["statement"]]),
-            "successful_web_attacks": len([o for o in observed if "HTTP 200" in o["statement"]]),
+            "observed_file_changes": sum(1 for o in observed if o.get("kind") == "file_change"),
+            "successful_web_attacks": sum(1 for o in observed if o.get("kind") == "attack_success"),
         },
     }
 
 
-def main():
+def run():
     scope = json.loads(SCOPE_FILE.read_text(encoding="utf-8"))
     events = load_jsonl(CANDIDATES)
-    relationships = json.loads(RELATIONSHIPS.read_text(encoding="utf-8")) if RELATIONSHIPS.exists() else []
+    correlations = json.loads(CORRELATIONS.read_text(encoding="utf-8")) if CORRELATIONS.exists() else []
 
-    incident = build_incident(scope, events, relationships)
+    incident = build_incident(scope, events, correlations)
 
     INCIDENT.parent.mkdir(parents=True, exist_ok=True)
     INCIDENT.write_text(json.dumps(incident, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"incident     : {incident['incident_id']}")
-    print(f"timeline     : {len(incident['timeline'])} entries")
-    print(f"actors       : {[a['ip'] for a in incident['actors'][:5]]}")
-    print(f"observed     : {len(incident['observed'])}")
-    print(f"inferred     : {len(incident['inferred'])}")
-    print(f"techniques   : {[t['technique'] for t in incident['attack_techniques']]}")
-    print(f"wrote        : {INCIDENT}")
+    log.info(f"incident     : {incident['incident_id']}")
+    log.info(f"timeline     : {len(incident['timeline'])} entries")
+    log.info(f"actors       : {[a['ip'] for a in incident['actors'][:5]]}")
+    log.info(f"observed     : {len(incident['observed'])}")
+    log.info(f"inferred     : {len(incident['inferred'])}")
+    log.info(f"techniques   : {[t['technique'] for t in incident['attack_techniques']]}")
+    log.info(f"wrote        : {INCIDENT}")
 
 
 if __name__ == "__main__":
-    main()
-
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    run()

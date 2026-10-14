@@ -1,43 +1,22 @@
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from collections import Counter
-
+from helpers import load_jsonl, parse_ts, real_client
 import networkx as nx
+import logging
+log = logging.getLogger(__name__)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 CANDIDATES = BASE_DIR / "data" / "output" / "candidate_events.jsonl"
-RELATIONSHIPS = BASE_DIR / "data" / "output" / "event_relationships.json"
-CLUSTERS_OUT = BASE_DIR / "data" / "output" / "incident_clusters.json"
+CORRELATIONS = BASE_DIR / "data" / "output" / "correlated_events.json"
+CLUSTERS = BASE_DIR / "data" / "output" / "incident_clusters.json"
 
 WEB_ROOT = "/var/www/html"
 ALLOWED = {"SAME_FILE", "SAME_ACTOR", "PRECEDES"}          # SAME_URL_PATH dropped
 STRONG_PRECEDES = {"entities.file", "entities.http_forwarded_for"}
 MAX_GAP_HOURS = 12
 EXAMPLES = 5
-
-
-def load_jsonl(path):
-    rows = []
-    with Path(path).open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
-def parse_ts(ts):
-    if not ts:
-        return None
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-
-
-def real_client(ev):
-    fwd = ev["entities"].get("http_forwarded_for") or []
-    return fwd[0] if fwd else ev["entities"].get("source_ip")
-
 
 def groups_of(ev):
     return set(ev["security_interpretation"].get("groups") or [])
@@ -148,12 +127,12 @@ def summarize(events):
     }
 
 
-def main():
+def run():
     candidates = load_jsonl(CANDIDATES)
     by_id = {e["event_id"]: e for e in candidates}
-    relationships = json.loads(RELATIONSHIPS.read_text(encoding="utf-8"))
+    correlations = json.loads(CORRELATIONS.read_text(encoding="utf-8"))
 
-    graph = build_graph(by_id, relationships)
+    graph = build_graph(by_id, correlations)
 
     clusters = []
     for i, comp in enumerate(nx.connected_components(graph), start=1):
@@ -163,14 +142,18 @@ def main():
 
     clusters.sort(key=lambda c: c["size"], reverse=True)
 
-    CLUSTERS_OUT.write_text(json.dumps(clusters, ensure_ascii=False, indent=2), encoding="utf-8")
+    CLUSTERS.write_text(json.dumps(clusters, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"events: {len(by_id)} | clusters: {len(clusters)}")
+    log.info(f"events: {len(by_id)} | clusters: {len(clusters)}")
     for c in clusters[:15]:
-        print(f"  {c['cluster_id']:>4}  size={c['size']:5d}  attack={c['has_attack']}  "
-              f"{c['first'][:19]}..{c['last'][:19]}  actors={c['actors'][:2]}")
-    print(f"wrote: {CLUSTERS_OUT}")
+        log.info(f"  {c['cluster_id']:>4}  size={c['size']:5d}  attack={c['has_attack']}  "
+                 f"{c['first'][:19]}..{c['last'][:19]}  actors={c['actors'][:2]}")
+    log.info(f"wrote: {CLUSTERS}")
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    run()

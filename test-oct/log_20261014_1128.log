@@ -1,0 +1,98 @@
+
+============================================================
+▶ normalize
+============================================================
+2026-10-14 23:26:10,375 INFO normalize_wazuh_logs: Reading File: /home/rani/soc-gen/test-oct/data/input/alerts_agent-010_2026-05-05_to_2026-05-09.json
+2026-10-14 23:26:10,582 INFO normalize_wazuh_logs: records: 17809
+2026-10-14 23:26:10,612 INFO normalize_wazuh_logs: 
+Timeline of logs:      2026-05-05T00:00:56.192000+07:00 -> 2026-05-09T23:59:18.186000+07:00
+2026-10-14 23:26:10,613 INFO normalize_wazuh_logs: Timeline of logs (UTC):  2026-05-04T17:00:56.192Z -> 2026-05-09T16:59:18.186Z
+2026-10-14 23:26:10,613 INFO normalize_wazuh_logs: 
+top decoders: [('web-accesslog', 16414), ('syscheck_new_entry', 640), ('nginx-errorlog', 438), ('syscheck_integrity_changed', 186), ('syscheck_deleted', 60), ('ossec', 21), ('pam', 12), ('dpkg-decoder', 12), ('kernel', 10), ('sudo', 10)]
+2026-10-14 23:26:10,613 INFO normalize_wazuh_logs: missing: {}
+2026-10-14 23:26:11,404 INFO normalize_wazuh_logs: Wrote 17809 raw and 17809 normalized events
+✓ normalize  (1.1s)
+
+============================================================
+▶ retrieve
+============================================================
+2026-10-14 23:26:11,870 INFO retrieve_events: Input events : 17809
+2026-10-14 23:26:11,870 INFO retrieve_events: Candidates   : 1257
+2026-10-14 23:26:11,870 INFO retrieve_events: Reduction   : 7.1%
+2026-10-14 23:26:11,871 INFO retrieve_events: by decoder: [('web-accesslog', 624), ('syscheck_new_entry', 416), ('syscheck_integrity_changed', 145), ('syscheck_deleted', 57), ('dpkg-decoder', 11), ('ossec', 4)]
+2026-10-14 23:26:11,871 INFO retrieve_events: seed inside: True
+✓ retrieve  (0.5s)
+
+============================================================
+▶ correlate
+============================================================
+2026-10-14 23:26:12,014 INFO correlate_events: candidate events : 1257
+2026-10-14 23:26:12,014 INFO correlate_events: correlations    : 7825
+2026-10-14 23:26:12,014 INFO correlate_events: events connected : 1257
+2026-10-14 23:26:12,014 INFO correlate_events: by type           : [('SAME_URL_PATH',1953), ('SAME_RULE', 1614), ('PRECEDES', 1562), ('SAME_ACTOR', 1350), ('SHARED_TECHNIQUE', 1028), ('SAME_FILE', 318)]
+✓ correlate  (0.1s)
+
+============================================================
+▶ reconstruct
+============================================================
+2026-10-14 23:26:12,086 INFO reconstruct_event: incident     : INC-001
+2026-10-14 23:26:12,086 INFO reconstruct_event: timeline     : 1257 entries
+2026-10-14 23:26:12,086 INFO reconstruct_event: actors       : ['157.85.96.175', '168.144.97.238', '182.253.240.95', '10.21.224.89', '40.77.167.55']
+2026-10-14 23:26:12,086 INFO reconstruct_event: observed     : 629
+2026-10-14 23:26:12,086 INFO reconstruct_event: inferred     : 0
+2026-10-14 23:26:12,086 INFO reconstruct_event: techniques   : ['T1565.001', 'T1595.002', 'T1105', 'T1505', 'T1190', 'T1055', 'T1083', 'T1070.004', 'T1485', 'T1505.003']
+2026-10-14 23:26:12,086 INFO reconstruct_event: wrote        : /home/rani/soc-gen/test-oct/data/output/incident.json
+✓ reconstruct  (0.1s)
+
+============================================================
+▶ cluster
+============================================================
+2026-10-14 23:26:12,245 INFO cluster_events: events: 1257 | clusters: 560
+2026-10-14 23:26:12,245 INFO cluster_events:   c146  size=  304  attack=True  2026-05-05T19:18:00..2026-05-05T19:18:10  actors=['157.85.96.175']
+2026-10-14 23:26:12,245 INFO cluster_events:   c124  size=  168  attack=False  2026-05-05T05:26:54..2026-05-05T05:29:38  actors=['168.144.97.238']
+2026-10-14 23:26:12,245 INFO cluster_events:   c143  size=   28  attack=False  2026-05-05T18:32:21..2026-05-05T18:32:40  actors=['182.253.240.95']
+2026-10-14 23:26:12,245 INFO cluster_events:   c359  size=   15  attack=False  2026-05-07T05:59:26..2026-05-07T06:05:42  actors=['40.77.167.55']
+2026-10-14 23:26:12,245 INFO cluster_events:   c357  size=   10  attack=False  2026-05-07T03:35:41..2026-05-07T03:39:41  actors=['66.249.64.163']
+2026-10-14 23:26:12,245 INFO cluster_events:   c361  size=   10  attack=False  2026-05-07T06:00:50..2026-05-07T06:02:56  actors=['40.77.167.14']
+2026-10-14 23:26:12,245 INFO cluster_events:   c484  size=    8  attack=True  2026-05-07T11:51:33..2026-05-07T11:53:35  actors=[]
+2026-10-14 23:26:12,245 INFO cluster_events:     c4  size=    7  attack=False  2026-05-04T17:18:44..2026-05-04T17:19:52  actors=['10.21.224.89']
+2026-10-14 23:26:12,245 INFO cluster_events:   c142  size=    7  attack=False  2026-05-05T17:18:49..2026-05-05T17:19:57  actors=['10.21.224.89']
+2026-10-14 23:26:12,245 INFO cluster_events:   c275  size=    7  attack=False  2026-05-06T10:11:38..2026-05-06T10:13:22  actors=['192.53.123.118']
+2026-10-14 23:26:12,245 INFO cluster_events:   c280  size=    7  attack=False  2026-05-06T17:18:54..2026-05-06T17:20:02  actors=['10.21.224.89']
+2026-10-14 23:26:12,245 INFO cluster_events:   c483  size=    7  attack=True  2026-05-07T11:38:15..2026-05-07T11:39:21  actors=[]
+2026-10-14 23:26:12,245 INFO cluster_events:   c560  size=    7  attack=True  2026-05-09T16:01:05..2026-05-09T16:14:21  actors=['103.80.236.161']
+2026-10-14 23:26:12,245 INFO cluster_events:   c314  size=    6  attack=True  2026-05-06T18:02:58..2026-05-06T18:26:28  actors=[]
+2026-10-14 23:26:12,245 INFO cluster_events:   c319  size=    6  attack=True  2026-05-06T18:31:18..2026-05-06T18:36:26  actors=[]
+2026-10-14 23:26:12,245 INFO cluster_events: wrote: /home/rani/soc-gen/test-oct/data/output/incident_clusters.json
+✓ cluster  (0.2s)
+
+============================================================
+▶ context
+============================================================
+2026-10-14 23:26:12,296 INFO incident_context: phases: [('other', 16), ('file_change', 510), ('recon', 333), ('attack', 279), ('initial_access', 11), ('webshell', 108)]
+2026-10-14 23:26:12,296 INFO incident_context: actors: ['103.80.236.161', '157.85.96.175', '175.158.55.134']
+2026-10-14 23:26:12,296 INFO incident_context: supporting: 100
+2026-10-14 23:26:12,296 INFO incident_context: techniques: [('T1565.001', 'Stored Data Manipulation'), ('T1595.002', 'Vulnerability Scanning'), ('T1105', 'Ingress Tool Transfer'), ('T1505', 'Server Software Component'), ('T1190', 'Exploit Public-Facing Application'), ('T1055', 'Process Injection'), ('T1083', 'File and Directory Discovery'), ('T1070.004', 'File Deletion'), ('T1485', 'Data Destruction'), ('T1505.003', 'Web Shell')]
+2026-10-14 23:26:12,296 INFO incident_context: wrote: /home/rani/soc-gen/test-oct/data/output/incident_context.json
+✓ context  (0.1s)
+
+============================================================
+▶ pseudonymize
+============================================================
+2026-10-14 23:26:12,360 INFO root: replaced 1486 identifiers
+2026-10-14 23:26:12,374 INFO root: OK: no identifier-looking text remains
+2026-10-14 23:26:12,374 INFO root: send to API : /home/rani/soc-gen/test-oct/data/output/incident_context_pseudo.json
+2026-10-14 23:26:12,374 INFO root: keep secret : /home/rani/soc-gen/test-oct/data/output/pseudonym_map.json
+✓ pseudonymize  (0.1s)
+
+============================================================
+▶ generate report
+============================================================
+wrote: /home/rani/soc-gen/test-oct/data/output/generated_report.md
+✓ generate report  (61.0s)
+
+============================================================
+▶ de-map report
+============================================================
+2026-10-14 23:27:13,358 INFO root: wrote: /home/rani/soc-gen/test-oct/data/output/generated_report_demapped_2.md
+✓ de-map report  (0.0s)

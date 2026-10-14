@@ -1,5 +1,11 @@
-from helpers import parse_ts, real_client, path_prefix
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from collections import Counter, defaultdict
+from helpers import parse_ts, real_client, load_jsonl
+import logging
+log = logging.getLogger(__name__)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 INCIDENT = BASE_DIR / "data" / "output" / "incident.json"
@@ -9,13 +15,6 @@ CONTEXT = BASE_DIR / "data" / "output" / "incident_context.json"
 
 WEB_ROOT = "/var/www/html"
 EXAMPLES_PER_PHASE = 5
-
-
-
-def real_client(ev):
-    fwd = ev["entities"].get("http_forwarded_for") or []
-    return fwd[0] if fwd else ev["entities"].get("source_ip")
-
 
 def groups_of(ev):
     return set(ev["security_interpretation"].get("groups") or [])
@@ -167,26 +166,11 @@ def build_context(scope, incident, candidates):
         "attack_techniques": build_techniques(candidates),
         "supporting_evidence": build_supporting(candidates),
         "weakening_evidence": build_weakening(candidates, actor_ips),
-        "missing_evidence": [
-            "process execution telemetry after shell drop",
-            "outbound network connections following shell interaction",
-            "web server logs outside the ingested window",
-            "authentication logs tying the initial access to a session",
-        ],
-        "not_observed": [
-            "a successful response (2xx) from the dropped shell endpoints",
-            "confirmed persistence mechanism",
-        ],
-        "unknown": [
-            "whether commands were executed through the dropped shells",
-            "whether credentials from wp_users were used",
-            "whether data was exfiltrated",
-            "whether the server was fully compromised",
-        ],
+       
     }
 
 
-def main():
+def run():
     scope = json.loads(SCOPE_FILE.read_text(encoding="utf-8"))
     incident = json.loads(INCIDENT.read_text(encoding="utf-8"))
     candidates = load_jsonl(CANDIDATES)
@@ -194,12 +178,16 @@ def main():
     context = build_context(scope, incident, candidates)
     CONTEXT.write_text(json.dumps(context, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print("phases      :", [(t["phase"], t["count"]) for t in context["timeline"]])
-    print("actors      :", [a["ip"] for a in context["actors"]])
-    print("supporting  :", len(context["supporting_evidence"]))
-    print("techniques  :", [(t["technique"], t["name"]) for t in context["attack_techniques"]])
-    print("wrote       :", CONTEXT)
+    log.info("phases: %s", [(t["phase"], t["count"]) for t in context["timeline"]])
+    log.info("actors: %s", [a["ip"] for a in context["actors"]])
+    log.info("supporting: %s", len(context["supporting_evidence"]))
+    log.info("techniques: %s", [(t["technique"], t["name"]) for t in context["attack_techniques"]])
+    log.info("wrote: %s", CONTEXT)
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    run()

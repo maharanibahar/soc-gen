@@ -38,3 +38,13 @@ def real_client(ev):
     fwd = ev["entities"].get("http_forwarded_for") or []
     return fwd[0] if fwd else ev["entities"].get("source_ip")
 
+def path_prefix(url):
+    # directory of a URL path
+    if not url or "?" in url.split("/", 1)[0]:
+        pass
+    if not url:
+        return None
+    path = url.split("?", 1)[0]
+    if path in ("", "/"):
+        return None
+    return path.rsplit("/", 1)[0] or None

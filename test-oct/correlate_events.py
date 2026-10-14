@@ -2,47 +2,18 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from collections import Counter
+from helpers import load_jsonl, parse_ts, real_client, path_prefix
+import logging
+log = logging.getLogger(__name__)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 CANDIDATES = BASE_DIR / "data" / "output" / "candidate_events.jsonl"
-RELATIONSHIPS = BASE_DIR / "data" / "output" / "correlated_events.json"
+CORRELATIONS = BASE_DIR / "data" / "output" / "correlated_events.json"
 
 BUCKET_CAP = 50
 
-
-def load_jsonl(path):
-    rows = []
-    with Path(path).open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
-def parse_ts(ts):
-    if not ts:
-        return None
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-
-
-def path_prefix(url):
-    if not url:
-        return None
-    path = url.split("?", 1)[0]
-    if path in ("", "/"):
-        return None
-    return path.rsplit("/", 1)[0] or None
-
-
-def real_client(ev):
-    fwd = ev["entities"].get("http_forwarded_for") or []
-    return fwd[0] if fwd else ev["entities"].get("source_ip")
-
-
-# --- key extractors (return None to skip, or a value/list to bucket on) ---
-
+#key extractors 
 def key_file(ev):
     return ev["entities"].get("file")
 
@@ -92,7 +63,7 @@ def bucket_by(events, key_fn):
 
 
 def correlate(events):
-    relationships = []
+    correlations = []
     seen = set()
 
     def emit(a, b, name, field, value):
@@ -102,7 +73,7 @@ def correlate(events):
         if sig in seen:
             return
         seen.add(sig)
-        relationships.append({
+        correlations.append({
             "source_event": a["event_id"],
             "target_event": b["event_id"],
             "relationship": name,
@@ -130,25 +101,29 @@ def correlate(events):
             for a, b in zip(group, group[1:]):
                 emit(a, b, "PRECEDES", field, value)
 
-    return relationships
+    return correlations
 
 
-def main():
+def run():
     events = load_jsonl(CANDIDATES)
-    relationships = correlate(events)
+    correlations = correlate(events)
 
-    RELATIONSHIPS.parent.mkdir(parents=True, exist_ok=True)
-    with RELATIONSHIPS.open("w", encoding="utf-8") as f:
-        json.dump(relationships, f, ensure_ascii=False, indent=2)
+    CORRELATIONS.parent.mkdir(parents=True, exist_ok=True)
+    with CORRELATIONS.open("w", encoding="utf-8") as f:
+        json.dump(correlations, f, ensure_ascii=False, indent=2)
 
-    kinds = Counter(r["relationship"] for r in relationships)
-    connected = {r["source_event"] for r in relationships} | {r["target_event"] for r in relationships}
+    kinds = Counter(r["relationship"] for r in correlations)
+    connected = {r["source_event"] for r in correlations} | {r["target_event"] for r in correlations}
 
-    print(f"candidate events : {len(events)}")
-    print(f"relationships    : {len(relationships)}")
-    print(f"events connected : {len(connected)}")
-    print("by type          :", kinds.most_common())
+    log.info(f"candidate events : {len(events)}")
+    log.info(f"correlations    : {len(correlations)}")
+    log.info(f"events connected : {len(connected)}")
+    log.info("by type           : %s", kinds.most_common())
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    run()
